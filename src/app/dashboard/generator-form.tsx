@@ -31,6 +31,7 @@ const formSchema = z.object({
         .max(10000, { message: 'Context is too long. Please keep it under 10000 characters.' }),
     provider: z.enum(['openai', 'gemini']),
     postLength: z.enum(['short', 'medium', 'long']),
+    postStyle: z.enum(['top_voice', 'case_study', 'technical_tutorial', 'storytelling', 'contrarian']),
 })
 
 export function GeneratorForm({ initialPostData }: { initialPostData?: { topic: string; provider: "openai" | "gemini"; content: string } }) {
@@ -53,6 +54,7 @@ export function GeneratorForm({ initialPostData }: { initialPostData?: { topic: 
             topic: '',
             provider: 'openai',
             postLength: 'medium',
+            postStyle: 'top_voice',
         },
     })
 
@@ -93,7 +95,7 @@ export function GeneratorForm({ initialPostData }: { initialPostData?: { topic: 
                 toast.success('Post gerado! (Vincule seu Telegram para receber por lá)')
             }
             
-            form.reset({ provider: values.provider, postLength: values.postLength, topic: '' })
+            form.reset({ provider: values.provider, postLength: values.postLength, postStyle: values.postStyle, topic: '' })
             router.refresh()
         } catch (error: any) {
             toast.error(error.message || 'An error occurred during generation.')
@@ -364,6 +366,30 @@ export function GeneratorForm({ initialPostData }: { initialPostData?: { topic: 
                                                                 )}
                                                             />
 
+                                                            {/* Style Selector */}
+                                                            <FormField
+                                                                control={form.control}
+                                                                name="postStyle"
+                                                                render={({ field }) => (
+                                                                    <FormItem className="space-y-0">
+                                                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                                            <FormControl>
+                                                                                <SelectTrigger className="h-8 rounded-full bg-background/50 hover:bg-background border border-border/50 text-foreground/70 hover:text-foreground focus:ring-0 shadow-none text-[12px] font-medium px-4 transition-colors w-auto gap-2 flex-shrink-0">
+                                                                                    <SelectValue placeholder="Estilo do Post" />
+                                                                                </SelectTrigger>
+                                                                            </FormControl>
+                                                                            <SelectContent className="bg-white border border-border/60 shadow-xl rounded-2xl min-w-[200px] p-1 z-[999]">
+                                                                                <SelectItem value="top_voice" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Top Voice 🌟</SelectItem>
+                                                                                <SelectItem value="case_study" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Case (Resultados) 📈</SelectItem>
+                                                                                <SelectItem value="technical_tutorial" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Tutorial Técnico 🛠️</SelectItem>
+                                                                                <SelectItem value="storytelling" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Storytelling 📖</SelectItem>
+                                                                                <SelectItem value="contrarian" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Contrarian (Polêmica) 🔥</SelectItem>
+                                                                            </SelectContent>
+                                                                        </Select>
+                                                                    </FormItem>
+                                                                )}
+                                                            />
+
                                                             {/* Option: URL Extractor */}
                                                             <Button
                                                                 type="button"
@@ -372,10 +398,10 @@ export function GeneratorForm({ initialPostData }: { initialPostData?: { topic: 
                                                                     e.preventDefault();
                                                                     setIsLinkMode(!isLinkMode);
                                                                 }}
-                                                                className={`rounded-full transition-colors shadow-none text-[12px] font-medium h-8 px-4 ${isLinkMode ? 'bg-primary/10 text-primary' : 'bg-background/50 text-foreground/60 hover:bg-background hover:text-foreground'}`}
+                                                                className={`rounded-full transition-colors shadow-none text-[12px] font-medium h-8 px-4 flex-shrink-0 hidden sm:flex ${isLinkMode ? 'bg-primary/10 text-primary' : 'bg-background/50 text-foreground/60 hover:bg-background hover:text-foreground'}`}
                                                             >
                                                                 <LinkIcon className="w-3.5 h-3.5 mr-2" />
-                                                                Contexto URL
+                                                                URL Extrair
                                                             </Button>
 
                                                         </div>
