@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { GeneratorForm } from './generator-form'
 import { TelegramPairing } from './telegram-pairing'
+import { AutomationCard } from './automation-card'
 import HistorySidebar from './history-sidebar'
 
 export default async function DashboardPage(props: { searchParams?: Promise<{ postId?: string }> }) {
@@ -81,7 +82,10 @@ export default async function DashboardPage(props: { searchParams?: Promise<{ po
                             </div>
                         </div>
 
-                        <GeneratorForm initialPostData={initialPostData || undefined} />
+                        <div className="flex-1 overflow-y-auto pb-20 w-full no-scrollbar">
+                            <GeneratorForm initialPostData={initialPostData || undefined} />
+                            {!initialPostData && <AutomationCard />}
+                        </div>
                     </div>
                 </main>
             </div>
