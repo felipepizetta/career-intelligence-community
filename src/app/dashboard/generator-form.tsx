@@ -164,7 +164,7 @@ export function GeneratorForm({ initialPostData }: { initialPostData?: { topic: 
             const data = await res.json()
             const richContext = data.content
 
-            const text = `🎯 Manchete Foco: ${article.title}\n\n📰 Conteúdo Denso Original Lido (Tratado):\n${richContext}\n\n---\nEscreva um post majestoso para LinkedIn que gere grande engajamento trazendo as implicações e discussões de mercado baseadas nessas informações exclusivas da matéria acima.`
+            const text = `Título da matéria: ${article.title}\n Texto da matéria: \n${richContext}`
 
             form.setValue('topic', text, { shouldValidate: true })
             toast.success('🎉 Imersão Profunda! O texto da matéria inteira foi injetado (Leia e depois Submit).')

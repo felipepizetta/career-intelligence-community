@@ -23,37 +23,29 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Invalid URL provided.' }, { status: 400 })
         }
 
-        // 2. Fetch raw HTML from the target site
-        console.log(`[EXTRACT NEWS] Fetching URL: ${url}`)
-        let htmlText = ''
+        // 2. Fetch parsed Markdown from the target site via Jina Reader APi
+        console.log(`[EXTRACT NEWS] Analyzing Homepage via Stealth Bypass (Jina): ${url}`)
+        let markdownText = ''
         try {
-            const fetchRes = await fetch(url, {
+            const fetchRes = await fetch(`https://r.jina.ai/${url}`, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+                    'Accept': 'text/plain',
+                    'X-Return-Format': 'markdown'
                 },
-                // timeout de 10s pra nao travar Vercel
-                signal: AbortSignal.timeout(10000)
+                signal: AbortSignal.timeout(20000)
             })
 
             if (!fetchRes.ok) {
-                return NextResponse.json({ error: `Failed to fetch website. Status: ${fetchRes.status}` }, { status: 500 })
+                return NextResponse.json({ error: `Falha brutal no bypass do site. Status: ${fetchRes.status}` }, { status: 500 })
             }
-            htmlText = await fetchRes.text()
+            markdownText = await fetchRes.text()
         } catch (err: any) {
             console.error('[EXTRACT NEWS] Fetch Error:', err)
-            return NextResponse.json({ error: `Could not reach the provided URL: ${err.message}` }, { status: 500 })
+            return NextResponse.json({ error: `Proxy bypass falhou ou deu timeout: ${err.message}` }, { status: 500 })
         }
 
-        // Limpeza drástica: removemos o <head>, <script>, <style> e <svg> para economizar tokens gigantes e focar no <body> puro
-        const cleanHtml = htmlText
-            .replace(/<head[\s\S]*?<\/head>/gi, '')
-            .replace(/<script[\s\S]*?<\/script>/gi, '')
-            .replace(/<style[\s\S]*?<\/style>/gi, '')
-            .replace(/<svg[\s\S]*?<\/svg>/gi, '')
-            .replace(/<!--[\s\S]*?-->/g, '');
-
-        // Limita o HTML pra não estourar tokens bizarramente pesados
-        const truncatedHtml = cleanHtml.substring(0, 80000)
+        // Limita o Markdown pra não estourar tokens bizarramente pesados
+        const truncatedMarkdown = markdownText.substring(0, 45000)
 
         // 3. Extract JSON with Gemini
         if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key') {
@@ -65,26 +57,27 @@ export async function POST(request: Request) {
             baseUrlOrigin = new URL(url).origin
         } catch (e) { }
 
-        const prompt = `Você atua como um Web Scraper de alta precisão. Eu fornecerei o HTML bruto de uma página da web (Capa ou Feed). A URL base acessada é: ${url}.
-Sua tarefa é encontrar de 3 a 7 manchetes principais da página.
-Para cada notícia encontrada, extraia o "title" (o título do artigo em string clara) e DEVE OBRIGATORIAMENTE extrair a "url" (o link em "href" absoluto).
+        const prompt = `Você atua como um Scraper Estrutural de alta precisão. Eu fornecerei o texto gerado da Capa/Homepage de um grande portal em formato MARKDOWN limpo. A URL base é: ${url}.
+Sua tarefa é ler este roteiro Markdown superficialmente e encontrar de 3 a 7 manchetes de notícias valiosas da capa.
 
-ATENÇÃO: É de vital importância que a "url" seja um link ABSOLUTO E VÁLIDO. 
-Se a tag "href" contiver um caminho relativo, recrie a linha misturando e prefixando forçadamente com a origem "${baseUrlOrigin}".
+Para cada notícia encontrada, extraia o "title" (o nome da matéria limpo) e a "url" (o link embutido do Markdown no formato [Titulo](Link)).
+
+ATENÇÃO: A URL é MANDATÓRIA e PRECISA SER UM LINK ABSOLUTO. 
+Se a URL do Markdown estiver relativa (ex: /noticias/brasil), reconstrua-a prefixando estritamente com a origem: "${baseUrlOrigin}".
 
 REGRA ESTRITA SOBRE NOMENCLATURA JSON:
-Você DEVE OBRIGATORIAMENTE usar as chaves exatas com nomes em minúsculo chamadas "title" e "url". NUNCA traduza os nomes destas chaves Javascript para "titulo" ou "manchete", pois a minha interface frontend quebra. Apenas o valor das string das manchetes será em português ou o idioma original da notícia.
+Você DEVE OBRIGATORIAMENTE usar as chaves exatas em minúsculo: "title" e "url". NUNCA TRADUZA OS CAMPOS PARA PORTUGUÊS (Não use "titulo", não use "link").
 
-Retorne **SOMENTE E ESTRITAMENTE** um JSON válido e cru que represente um array de objetos. Zero introduções ou markdowns. Zero escapes que não sejam necessários.
-Formato exato esperado:
+Retorne **SOMENTE E ESTRITAMENTE** um JSON válido cru (array de objetos). Nenhuma introdução, nada de blocos \`\`\`json\`\`\`.
+Exemplo da resposta 100% desejada:
 [
-  { "title": "Nome da Notícia Clara Evitando Lixo e Caracteres Especiais HTML", "url": "https://..." }
+  { "title": "Cientistas descobrem nova vacina", "url": "https://site.com/saude/123" }
 ]
 
-Aqui está o HTML restrito da homepage:
---- INICIO HTML ---
-${truncatedHtml}
---- FIM HTML ---`;
+Aqui está o conteúdo isolado em Markdown da homepage:
+--- INICIO MARKDOWN ---
+${truncatedMarkdown}
+--- FIM MARKDOWN ---`;
 
         const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
         const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' })
