@@ -2,6 +2,27 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import OpenAI from 'openai'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { z } from 'zod'
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
+
+// Zod Security Schema
+const generateSchema = z.object({
+    topic: z.string().min(10, "Tópico deve ter no mínimo 10 caracteres").max(3000, "Tópico maliciosamente longo. Máximo 3000.").trim(),
+    provider: z.enum(['openai', 'gemini']),
+    postLength: z.enum(['short', 'medium', 'long']).default('medium'),
+    postStyle: z.string().max(100).default('top_voice')
+})
+
+// Rate Limiter
+let ratelimit: Ratelimit | null = null;
+if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    ratelimit = new Ratelimit({
+        redis: Redis.fromEnv(),
+        limiter: Ratelimit.slidingWindow(3, "1 m"), // 3 requests per minute per user
+        analytics: true,
+    });
+}
 
 export async function POST(request: Request) {
     try {
@@ -17,16 +38,22 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // 2. Parse payload
-        const body = await request.json()
-        const { topic, provider, postLength = 'medium', postStyle = 'top_voice' } = body
-
-        if (!topic || topic.trim().length < 10) {
-            return NextResponse.json({ error: 'Topic must be at least 10 characters.' }, { status: 400 })
+        // 2. Parse payload with Zod
+        let body;
+        try {
+            const rawBody = await request.json()
+            body = generateSchema.parse(rawBody)
+        } catch (zodError: any) {
+            return NextResponse.json({ error: 'Payload violou as regras de segurança', details: zodError.errors }, { status: 400 })
         }
+        const { topic, provider, postLength, postStyle } = body
 
-        if (topic.length > 10000) {
-            return NextResponse.json({ error: 'Topic is too long. Maximum allowed is 10000 characters.' }, { status: 400 })
+        // 2.5. Rate Limiting Check
+        if (ratelimit) {
+            const { success } = await ratelimit.limit(user.id)
+            if (!success) {
+                return NextResponse.json({ error: 'Muitas requisições. Rate Limit estourou (Máximo de 3 gen/min).' }, { status: 429 })
+            }
         }
 
         let generatedContent = ''
@@ -89,8 +116,12 @@ ${styleInstruction}
 EMITA SOMENTE E PURAMENTE O TEXTO DO POST, PRONTO PARA SER COPIADO. Nada de aspas externas, respostas prévias ou metadados de assistência. Inclua no final do texto 3 a 5 hashtags muito técnicas da área abordada soltas em uma base linear.`;
 
         if (provider === 'gemini') {
-            if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'your_gemini_api_key' && process.env.GEMINI_API_KEY !== 'mock-key') {
-                const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+            const userKey = user.user_metadata?.gemini_api_key;
+            const envKey = process.env.GEMINI_API_KEY;
+            const finalKey = (userKey && userKey.length > 5) ? userKey : envKey;
+
+            if (finalKey && finalKey !== 'your_gemini_api_key' && finalKey !== 'mock-key') {
+                const ai = new GoogleGenerativeAI(finalKey)
                 const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
                 const result = await model.generateContent(prompt)
@@ -100,8 +131,12 @@ EMITA SOMENTE E PURAMENTE O TEXTO DO POST, PRONTO PARA SER COPIADO. Nada de aspa
                 generatedContent = `[MOCK GEMINI RESPONSE] Here is an engaging post about: ${topic.substring(0, 30)}...\n\n#AI #LinkedIn #Growth`
             }
         } else { // openai
-            const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'mock-key' })
-            if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key') {
+            const userKey = user.user_metadata?.openai_api_key;
+            const envKey = process.env.OPENAI_API_KEY;
+            const finalKey = (userKey && userKey.length > 5) ? userKey : envKey;
+
+            if (finalKey && finalKey !== 'your_openai_api_key' && finalKey !== 'mock-key') {
+                const openai = new OpenAI({ apiKey: finalKey })
                 const completion = await openai.chat.completions.create({
                     model: "gpt-4o",
                     messages: [{ role: "user", content: prompt }],

@@ -54,16 +54,43 @@ export async function GET(request: Request) {
         }
 
         let runCount = 0;
-        const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
-        const geminiModel = ai.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
         for (const auto of automations) {
-            // Check Frequency
+            // 1. Filtro por Dias Permitidos (Calendário)
+            const allowedDaysStr = auto.schedule_days || '1,2,3,4,5';
+            const allowedDays = allowedDaysStr.split(',').map(Number);
+            if (!allowedDays.includes(dayOfWeek)) {
+                console.log(`[AUTO-PILOT] Pulo: User ${auto.user_id} não tem automação ativa para hoje (Dia ${dayOfWeek}).`);
+                continue;
+            }
+
+            // 2. Filtro de Horários de Pico (1h antes do Pico Máximo)
+            const allowedPostsPerDay = auto.posts_per_day || 1;
+            let allowedHours: number[] = []; // Horários em BRT
+            
+            if (allowedPostsPerDay === 1) {
+                allowedHours = [7]; // 07:00 (1h antes do pico da manhã 08:00)
+            } else if (allowedPostsPerDay === 2) {
+                allowedHours = [7, 11]; // 07:00 e 11:00 (1h antes do almoço 12:00)
+            } else if (allowedPostsPerDay === 3) {
+                allowedHours = [7, 11, 16]; // 07:00, 11:00 e 16:00 (1h antes do fim de tarde 17:00)
+            } else {
+                allowedHours = [7, 11, 14, 16]; // Extra
+            }
+
+            if (!allowedHours.includes(hour)) {
+                console.log(`[AUTO-PILOT] Pulo: Hora atual (${hour}h BRT) não é um horário alvo para estratégia de ${allowedPostsPerDay} posts do user ${auto.user_id}.`);
+                continue;
+            }
+
+            // 3. Prevenção de Duplicidade no mesmo Slot de Horário (Flood Block)
             if (auto.last_delivered_at) {
                 const last = new Date(auto.last_delivered_at);
-                const diffDays = (nowUtc.getTime() - last.getTime()) / (1000 * 60 * 60 * 24);
-                if (diffDays < auto.frequency_days) {
-                    console.log(`[AUTO-PILOT] Pulo: User ${auto.user_id} gerou há pouco tempo (< ${auto.frequency_days}d).`)
+                const diffHours = (nowUtc.getTime() - last.getTime()) / (1000 * 60 * 60);
+                
+                // Se rodou há menos de 2 horas atrás, significa que já cobriu ESSE pico alvo.
+                if (diffHours < 2) { 
+                    console.log(`[AUTO-PILOT] Pulo: User ${auto.user_id} já recebeu para este horário de pico recentemente (<2h).`)
                     continue; 
                 }
             }
@@ -77,35 +104,98 @@ export async function GET(request: Request) {
                 continue;
             }
 
-            console.log(`[AUTO-PILOT] Iniciando raspagem autônoma para User ${auto.user_id} na URL ${auto.news_source}...`);
+            // Get User API Key or fallback to env
+            const userKey = userData?.user?.user_metadata?.gemini_api_key;
+            const envKey = process.env.GEMINI_API_KEY;
+            const finalKey = (userKey && userKey.length > 5) ? userKey : (envKey || '');
+
+            if (!finalKey) {
+                console.log(`[AUTO-PILOT] Missing Gemini Key for user ${auto.user_id}. Skipping.`);
+                continue;
+            }
+
+            const ai = new GoogleGenerativeAI(finalKey);
+            const geminiModel = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+            // Split incoming multiline string to array of URLs
+            const urlList = auto.news_source.split('\n').map((u: string) => u.trim()).filter((u: string) => u.startsWith('http'));
+            
+            if (urlList.length === 0) {
+                console.log(`[AUTO-PILOT] No valid URLs found for user ${auto.user_id}. Skipping.`);
+                continue;
+            }
+
+            // Memory Tracker: Check if it's the same day to retain used sources
+            const isSameDay = auto.last_delivered_at && new Date(auto.last_delivered_at).getUTCDate() === nowUtc.getUTCDate() && new Date(auto.last_delivered_at).getUTCMonth() === nowUtc.getUTCMonth() && new Date(auto.last_delivered_at).getUTCFullYear() === nowUtc.getUTCFullYear();
+            let usedSources = isSameDay && auto.used_sources_today ? auto.used_sources_today.split(',') : [];
+
+            // Filter out used URLs
+            let availableUrlList = urlList.filter((u: string) => !usedSources.includes(u));
+            
+            // Fallback: Se ele já esgotou os links diários, zera a memória e repete para não perder o Post estipulado.
+            if (availableUrlList.length === 0) {
+                console.log(`[AUTO-PILOT] User ${auto.user_id} esgotou os sites diários. Fazendo reset da memória de urls.`);
+                availableUrlList = urlList;
+                usedSources = [];
+            }
+
+            console.log(`[AUTO-PILOT] User ${auto.user_id} - Verificando ${availableUrlList.length} sites (de ${urlList.length}) disponíveis simultaneamente...`);
 
             try {
-                // PASSO 1: Ler Capa do Site usando Proxy Jina
-                const capaRes = await fetch(`https://r.jina.ai/${auto.news_source}`, { signal: AbortSignal.timeout(15000), headers: { 'Accept': 'text/plain', 'X-Return-Format': 'markdown' } })
-                if (!capaRes.ok) throw new Error("Capa blockeada");
-                const capaMarkdown = await capaRes.text();
+                // PASSO 1: Baixar as capas de todos os sites em paralelo para avaliação da IA
+                const coversPromises = availableUrlList.map(async (u: string) => {
+                    try {
+                        const res = await fetch(`https://r.jina.ai/${u}`, { signal: AbortSignal.timeout(15000), headers: { 'Accept': 'text/plain', 'X-Return-Format': 'markdown' } });
+                        if (!res.ok) return null;
+                        const text = await res.text();
+                        // 15k chars por site é o suficiente para pegar os links das capas
+                        return `### FONTE_URL: ${u}\n${text.substring(0, 15000)}\n\n---\n\n`;
+                    } catch {
+                        return null;
+                    }
+                });
 
-                // PASSO 2: AI julga a notícia mais polemica/engajadora
-                const promptSelector = `Vou te passar a Capa Markdown do site: ${auto.news_source}. Encontre a manchete de notícia MAIS relevante, inusitada ou de forte impacto (ideal para um post polêmico/debate corporativo). \nRetorne APENAS um JSON cru absoluto: {"title": "Manchete", "url": "Link absoluto"}.\n\n---MARKDOWN---\n${capaMarkdown.substring(0, 30000)}`;
+                const coversResults = await Promise.allSettled(coversPromises);
+                let combinedMarkdown = '';
+                coversResults.forEach((r: any) => {
+                    if (r.status === 'fulfilled' && r.value) combinedMarkdown += r.value;
+                });
+
+                if (!combinedMarkdown.trim()) throw new Error("Capa de todos os sites bloquearam acesso");
+
+                // PASSO 2: O AI "Editor-Chefe" julga E escolhe o estilo (se estiver no Automático)
+                const isAutoStyle = auto.post_style === 'auto';
+                const jsonFormat = isAutoStyle 
+                    ? '{"title": "Manchete", "url": "Link absoluto da matéria", "source_url": "FONTE_URL exata que você analisou", "archetype": "top_voice" | "case_study" | "contrarian" | "storytelling"}'
+                    : '{"title": "Manchete", "url": "Link absoluto da matéria", "source_url": "FONTE_URL exata que você analisou"}';
+
+                const promptSelector = `Vou te passar o formato Markdown das Capas de VÁRIOS sites de notícias simultaneamente.\nComo um Editor-Chefe brilhante, você deve analisar TODAS as opções disponíveis nestas páginas e selecionar a ÚNICA notícia que julgar ser a mais genial, impactante e engajadora para a rede social LinkedIn corporativa no dia de hoje.\n${isAutoStyle ? "Além de escolher a pauta, defina logicamente, baseado no assunto, qual o MELHOR arquétipo de texto se encaixa nessa postagem." : ""}\n\nRetorne APENAS um JSON cru absoluto neste formato exato e coloque a FONTE_URL da qual retirou a matéria no campo source_url:\n${jsonFormat}\n\n---MARKDOWN AGREGADO---\n${combinedMarkdown.substring(0, 150000)}`;
                 
                 const selectResult = await geminiModel.generateContent(promptSelector);
                 let jsonStr = selectResult.response.text().replace(/\`\`\`json/gi, '').replace(/\`\`\`/g, '').trim();
                 const chosenNews = JSON.parse(jsonStr);
 
-                if (!chosenNews.url || !chosenNews.url.startsWith('http')) throw new Error('Falha no JSON url');
+                if (!chosenNews.url || !chosenNews.url.startsWith('http')) throw new Error('Falha na extração de URL do JSON pelo Editor-Chefe');
+                
+                const chosenSource = chosenNews.source_url || availableUrlList[0]; // fallback
+                usedSources.push(chosenSource);
+
+                console.log(`[AUTO-PILOT] IA escolheu pauta: ${chosenNews.title} (da fonte ${chosenSource}). O estilo associado foi: ${chosenNews.archetype || auto.post_style}`);
 
                 // PASSO 3: Ler o artigo selecionado profundamente
                 const articleRes = await fetch(`https://r.jina.ai/${chosenNews.url}`, { signal: AbortSignal.timeout(15000), headers: { 'Accept': 'text/plain', 'X-Return-Format': 'markdown' } })
-                if (!articleRes.ok) throw new Error("Materia bloqueada");
+                if (!articleRes.ok) throw new Error("A matéria principal estava bloqueada");
                 const articleMarkdown = await articleRes.text();
 
-                // PASSO 4: Gerar a Postagem Final de LinkedIn com Base no Estilo dele
+                // PASSO 4: Gerar a Postagem Final de LinkedIn com O Estilo Assinalado
+                const activeStyle = isAutoStyle ? (chosenNews.archetype || 'top_voice') : auto.post_style;
                 let styleInstruction = '🎯 ESTILO OBRIGATÓRIO (Liderança Top Voice): Liderança de pensamento e visão executiva forte com opinião.';
-                if (auto.post_style === 'case_study') styleInstruction = '🎯 ESTILO (Case Resultados): Foque nos números e traga lições táticas da matéria (Hard Skills).'
-                if (auto.post_style === 'contrarian') styleInstruction = '🎯 ESTILO (Debate Contrariano): Traga uma opinião polêmica sobre a notícia forçando um debate agressivo (mas educado) sobre o tema.'
-                if (auto.post_style === 'storytelling') styleInstruction = '🎯 ESTILO (Storytelling Humanizado): Conte os fatos da matéria como uma história de superação de carreira.'
+                
+                if (activeStyle === 'case_study') styleInstruction = '🎯 ESTILO (Case Resultados): Foque nos números e traga lições táticas da matéria (Hard Skills).'
+                if (activeStyle === 'contrarian') styleInstruction = '🎯 ESTILO (Debate Contrariano): Traga uma opinião polêmica sobre a notícia forçando um debate agressivo (mas educado) sobre o tema.'
+                if (activeStyle === 'storytelling') styleInstruction = '🎯 ESTILO (Storytelling Humanizado): Conte os fatos da matéria como uma história de superação de carreira.'
 
-                const promptWriter = `Você é um Executivo Sênior Ghostwriter.\nEscreva um post nativo de LinkedIn altamente viral sobre esta Noticia: "${chosenNews.title}".\n${styleInstruction}\nRestrição Crítica: NUNCA crie introduções robóticas. ZERO hashtags no fim. Entregue um parágrafo de cada vez. Finalize fazendo uma ótima pergunta.\n\nMaterial Fonte:\n${articleMarkdown.substring(0, 20000)}`;
+                const promptWriter = `Você é um Executivo Sênior Ghostwriter.\nEscreva um post nativo de LinkedIn altamente viral sobre esta Noticia: "${chosenNews.title}".\n${styleInstruction}\nRestrição Crítica: NUNCA crie introduções robóticas. ZERO hashtags no fim. Entregue um parágrafo de cada vez. Finalize fazendo uma ótima reflexão ou pergunta.\n\nMaterial Fonte:\n${articleMarkdown.substring(0, 20000)}`;
 
                 const postResult = await geminiModel.generateContent(promptWriter);
                 const postFinal = postResult.response.text();
@@ -120,8 +210,11 @@ export async function GET(request: Request) {
                     body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'HTML' })
                 });
 
-                // PASSO 6: Atualizar Data de Envio no Banco
-                await supabaseAdmin.from('user_automations').update({ last_delivered_at: new Date().toISOString() }).eq('id', auto.id);
+                // PASSO 6: Atualizar Data de Envio no Banco e Retenção de URL
+                await supabaseAdmin.from('user_automations').update({ 
+                    last_delivered_at: new Date().toISOString(),
+                    used_sources_today: usedSources.join(',') 
+                }).eq('id', auto.id);
                 console.log(`[AUTO-PILOT] Sucesso absurdo! Post despachado para user ${auto.user_id}`);
                 runCount++;
 

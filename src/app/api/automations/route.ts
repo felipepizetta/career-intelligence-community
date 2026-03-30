@@ -1,5 +1,27 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { z } from 'zod'
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
+
+// Zod Security Schema
+const autoSchema = z.object({
+    is_active: z.boolean().default(false),
+    news_source: z.string().max(8000, "URL base está muito longa. Rejeitado pelo Firewall.").trim(),
+    post_style: z.string().max(100).default('auto'),
+    schedule_days: z.string().regex(/^[0-6,]+$/, "Formato de dias inválido.").default('1,2,3,4,5'),
+    posts_per_day: z.number().int().min(1).max(10).default(1)
+})
+
+// Rate Limiter
+let ratelimit: Ratelimit | null = null;
+if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    ratelimit = new Ratelimit({
+        redis: Redis.fromEnv(),
+        limiter: Ratelimit.slidingWindow(10, "1 m"), // 10 config saves per minute
+        analytics: true,
+    });
+}
 
 export async function GET(request: Request) {
     try {
@@ -44,8 +66,24 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        const body = await request.json()
-        const { is_active, news_source, post_style, frequency_days } = body
+        // Zod Parsing
+        let body;
+        try {
+            const rawBody = await request.json()
+            body = autoSchema.parse(rawBody)
+        } catch (zodError: any) {
+            return NextResponse.json({ error: 'Payload de Automação violou as regras de segurança', details: zodError.errors }, { status: 400 })
+        }
+        
+        const { is_active, news_source, post_style, schedule_days, posts_per_day } = body
+
+        // Rate Limiting Check
+        if (ratelimit) {
+            const { success } = await ratelimit.limit(user.id)
+            if (!success) {
+                return NextResponse.json({ error: 'Muitas tentativas de salvamento. Tente novamente em 1 minuto.' }, { status: 429 })
+            }
+        }
 
         // Upsert logically
         const { error } = await supabase
@@ -55,7 +93,8 @@ export async function POST(request: Request) {
                 is_active,
                 news_source,
                 post_style,
-                frequency_days,
+                schedule_days: schedule_days || '1,2,3,4,5',
+                posts_per_day: posts_per_day || 1,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'user_id' })
 

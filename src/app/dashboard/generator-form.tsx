@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import * as z from 'zod'
-import { Send, Loader2, Sparkles, Linkedin, LinkIcon, X, Newspaper } from 'lucide-react'
+import { Send, Loader2, Sparkles, Linkedin, LinkIcon, X, Newspaper, Search, Info } from 'lucide-react'
 import { toast } from 'sonner'
+import { SettingsModal } from './settings-modal'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -34,10 +35,19 @@ const formSchema = z.object({
     postStyle: z.enum(['top_voice', 'case_study', 'technical_tutorial', 'storytelling', 'contrarian']),
 })
 
-export function GeneratorForm({ initialPostData }: { initialPostData?: { topic: string; provider: "openai" | "gemini"; content: string } }) {
+export function GeneratorForm({ 
+    initialPostData, 
+    hasOpenAI = false, 
+    hasGemini = false 
+}: { 
+    initialPostData?: { topic: string; provider: "openai" | "gemini"; content: string },
+    hasOpenAI?: boolean,
+    hasGemini?: boolean
+}) {
     const router = useRouter()
     const [isGenerating, setIsGenerating] = useState(false)
     const [lastGeneratedPost, setLastGeneratedPost] = useState(initialPostData?.content || '')
+    const hasAnyKey = hasOpenAI || hasGemini;
 
     // News Extractor States
     const [isLinkMode, setIsLinkMode] = useState(false)
@@ -66,9 +76,10 @@ export function GeneratorForm({ initialPostData }: { initialPostData?: { topic: 
         } else {
             setLastGeneratedPost('')
             form.setValue('topic', '', { shouldValidate: false })
-            form.setValue('provider', 'openai', { shouldValidate: false })
+            const defaultProv = hasOpenAI ? 'openai' : (hasGemini ? 'gemini' : 'openai');
+            form.setValue('provider', defaultProv as any, { shouldValidate: false })
         }
-    }, [initialPostData, form])
+    }, [initialPostData, form, hasOpenAI, hasGemini])
 
     async function onSubmit(values: z.infer<typeof formSchema>) {
         setIsGenerating(true)
@@ -345,26 +356,36 @@ export function GeneratorForm({ initialPostData }: { initialPostData?: { topic: 
 
                                                         <div className="flex items-center gap-2 pointer-events-auto">
                                                             
-                                                            {/* Model Selector */}
-                                                            <FormField
-                                                                control={form.control}
-                                                                name="provider"
-                                                                render={({ field }) => (
-                                                                    <FormItem className="space-y-0">
-                                                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                                                            <FormControl>
-                                                                                <SelectTrigger className="h-8 rounded-full bg-background/50 hover:bg-background border border-border/50 text-foreground/70 hover:text-foreground focus:ring-0 shadow-none text-[12px] font-medium px-4 transition-colors w-auto gap-2">
-                                                                                    <SelectValue placeholder="Model" />
-                                                                                </SelectTrigger>
-                                                                            </FormControl>
-                                                                            <SelectContent className="bg-white border border-border/60 shadow-xl rounded-2xl min-w-[150px] p-1">
-                                                                                <SelectItem value="openai" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">OpenAI (GPT-4o)</SelectItem>
-                                                                                <SelectItem value="gemini" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Google Gemini</SelectItem>
-                                                                            </SelectContent>
-                                                                        </Select>
-                                                                    </FormItem>
-                                                                )}
-                                                            />
+                                                            {/* Model Selector or API Missing Warning */}
+                                                            {hasAnyKey ? (
+                                                                <FormField
+                                                                    control={form.control}
+                                                                    name="provider"
+                                                                    render={({ field }) => (
+                                                                        <FormItem className="space-y-0">
+                                                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                                                <FormControl>
+                                                                                    <SelectTrigger className="h-8 rounded-full bg-background/50 hover:bg-background border border-border/50 text-foreground/70 hover:text-foreground focus:ring-0 shadow-none text-[12px] font-medium px-4 transition-colors w-auto gap-2">
+                                                                                        <SelectValue placeholder="Model" />
+                                                                                    </SelectTrigger>
+                                                                                </FormControl>
+                                                                                <SelectContent className="bg-white border border-border/60 shadow-xl rounded-2xl min-w-[150px] p-1">
+                                                                                    {hasOpenAI && <SelectItem value="openai" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">OpenAI (GPT-4o)</SelectItem>}
+                                                                                    {hasGemini && <SelectItem value="gemini" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Google Gemini</SelectItem>}
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                        </FormItem>
+                                                                    )}
+                                                                />
+                                                            ) : (
+                                                                <SettingsModal 
+                                                                    customTrigger={
+                                                                        <Button type="button" variant="outline" className="h-8 rounded-full border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 text-[12px] font-medium px-4 transition-colors shadow-none cursor-pointer">
+                                                                            Nenhuma chave de API cadastrada
+                                                                        </Button>
+                                                                    }
+                                                                />
+                                                            )}
 
                                                             {/* Style Selector */}
                                                             <FormField
@@ -414,7 +435,7 @@ export function GeneratorForm({ initialPostData }: { initialPostData?: { topic: 
 
                                                             <Button
                                                                 type="submit"
-                                                                disabled={isGenerating || field.value.trim().length < 10}
+                                                                disabled={isGenerating || field.value.trim().length < 10 || !hasAnyKey}
                                                                 size="icon"
                                                                 className="w-10 h-10 rounded-full bg-primary text-white hover:bg-primary/90 disabled:bg-foreground/10 disabled:text-foreground/30 disabled:opacity-50 transition-all duration-200 shadow-md hover:shadow-lg flex-shrink-0 z-10 pointer-events-auto"
                                                             >

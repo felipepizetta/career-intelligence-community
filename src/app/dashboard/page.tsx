@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { GeneratorForm } from './generator-form'
 import { TelegramPairing } from './telegram-pairing'
-import { AutomationCard } from './automation-card'
+import { SettingsModal } from './settings-modal'
 import HistorySidebar from './history-sidebar'
 
 export default async function DashboardPage(props: { searchParams?: Promise<{ postId?: string }> }) {
@@ -36,6 +36,9 @@ export default async function DashboardPage(props: { searchParams?: Promise<{ po
         }
     }
 
+    const hasOpenAI = !!user.user_metadata?.openai_api_key && user.user_metadata?.openai_api_key.length > 5;
+    const hasGemini = !!user.user_metadata?.gemini_api_key && user.user_metadata?.gemini_api_key.length > 5;
+
     return (
         <div className="flex h-screen w-full flex-col bg-background text-foreground relative overflow-hidden">
             
@@ -48,9 +51,12 @@ export default async function DashboardPage(props: { searchParams?: Promise<{ po
                     <span className="font-serif text-[15px] font-medium tracking-tight text-foreground/90">Career Intelligence</span>
                 </Link>
                 <div className="flex items-center gap-4">
-                    <span className="text-[13px] font-medium text-foreground/50 hidden sm:inline-block">
-                        {user.email}
-                    </span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[13px] font-medium text-foreground/50 hidden sm:inline-block">
+                            {user.email}
+                        </span>
+                        <SettingsModal />
+                    </div>
                     <form action="/auth/signout" method="post">
                         <Button variant="ghost" size="sm" className="text-foreground/60 hover:text-foreground hover:bg-foreground/5 rounded-full text-[13px] font-medium transition-colors px-3 h-8">
                             Sair <LogOut className="ml-2 h-3.5 w-3.5 opacity-70" />
@@ -83,8 +89,11 @@ export default async function DashboardPage(props: { searchParams?: Promise<{ po
                         </div>
 
                         <div className="flex-1 overflow-y-auto pb-20 w-full no-scrollbar">
-                            <GeneratorForm initialPostData={initialPostData || undefined} />
-                            {!initialPostData && <AutomationCard />}
+                            <GeneratorForm 
+                                initialPostData={initialPostData || undefined} 
+                                hasOpenAI={hasOpenAI} 
+                                hasGemini={hasGemini}
+                            />
                         </div>
                     </div>
                 </main>
