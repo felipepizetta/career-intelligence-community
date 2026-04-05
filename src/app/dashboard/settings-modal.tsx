@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Settings, Key, Bot, RefreshCw, Zap, Clock, LinkIcon, Calendar } from 'lucide-react'
+import { Settings, Key, Bot, RefreshCw, Zap, Clock, LinkIcon, Calendar, User } from 'lucide-react'
 import {
     Dialog,
     DialogContent,
@@ -13,14 +13,16 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { toast } from 'sonner'
 
 export function SettingsModal({ customTrigger }: { customTrigger?: React.ReactNode }) {
     const [open, setOpen] = useState(false)
     const [loadingKeys, setLoadingKeys] = useState(false)
     const [savingKeys, setSavingKeys] = useState(false)
-    const [openaiKey, setOpenaiKey] = useState('')
     const [geminiKey, setGeminiKey] = useState('')
+    const [userContext, setUserContext] = useState('')
 
     // Automation States
     const [automationLoading, setAutomationLoading] = useState(true)
@@ -40,8 +42,8 @@ export function SettingsModal({ customTrigger }: { customTrigger?: React.ReactNo
                     const res = await fetch('/api/user/settings')
                     if (res.ok) {
                         const data = await res.json()
-                        setOpenaiKey(data.openai_api_key || '')
                         setGeminiKey(data.gemini_api_key || '')
+                        setUserContext(data.user_context || '')
                     }
                 } catch (error) {
                     console.error("Failed to load settings", error)
@@ -88,14 +90,14 @@ export function SettingsModal({ customTrigger }: { customTrigger?: React.ReactNo
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    openai_api_key: openaiKey,
-                    gemini_api_key: geminiKey
+                    gemini_api_key: geminiKey,
+                    user_context: userContext
                 })
             })
             if (res.ok) {
-                toast.success('Chaves de API atualizadas!')
+                toast.success('Configurações do usuário atualizadas!')
             } else {
-                toast.error('Erro ao salvar as chaves.')
+                toast.error('Erro ao salvar as configurações.')
             }
         } catch (e) {
             toast.error('Erro de conexão ao salvar.')
@@ -160,6 +162,12 @@ export function SettingsModal({ customTrigger }: { customTrigger?: React.ReactNo
                     <div className="px-6 border-b border-border/40">
                         <TabsList className="w-full flex h-auto bg-transparent border-none p-0 gap-6">
                             <TabsTrigger 
+                                value="profile" 
+                                className="pb-3 pt-2 px-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none font-medium data-[state=active]:text-foreground text-foreground/50 transition-all flex gap-2 items-center"
+                            >
+                                <User className="h-4 w-4" /> Perfil
+                            </TabsTrigger>
+                            <TabsTrigger 
                                 value="api-keys" 
                                 className="pb-3 pt-2 px-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none font-medium data-[state=active]:text-foreground text-foreground/50 transition-all flex gap-2 items-center"
                             >
@@ -175,22 +183,35 @@ export function SettingsModal({ customTrigger }: { customTrigger?: React.ReactNo
                     </div>
 
                     <div className="p-6 bg-background/30 h-[480px] overflow-y-auto w-full no-scrollbar">
-                        <TabsContent value="api-keys" className="m-0 space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                        <TabsContent value="profile" className="m-0 space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
                             <div className="space-y-4">
                                 <div>
                                     <label className="text-[13px] font-medium text-foreground/80 flex items-center gap-2 mb-2">
-                                        OpenAI API Key
+                                        Contexto Profissional (Tom de Voz)
                                     </label>
-                                    <input
-                                        type="password"
-                                        placeholder="sk-..."
-                                        value={openaiKey}
-                                        onChange={(e) => setOpenaiKey(e.target.value)}
-                                        className="w-full rounded-2xl border border-border/60 bg-white/50 px-4 py-3 text-sm placeholder:text-foreground/40 focus:border-orange-500/50 focus:outline-none focus:ring-4 focus:ring-orange-500/10 transition-all"
+                                    <textarea
+                                        placeholder="Ex: Sou um Desenvolvedor Front-end Pleno que faz piadas com código. Gosto de um tom leve, bem humorado mas super profissional. Escrevo para tentar engajar tech recruiters para vagas gringas..."
+                                        value={userContext}
+                                        onChange={(e) => setUserContext(e.target.value)}
+                                        className="w-full min-h-[140px] rounded-2xl border border-border/60 bg-white/50 px-4 py-3 text-sm placeholder:text-foreground/40 focus:border-orange-500/50 focus:outline-none focus:ring-4 focus:ring-orange-500/10 transition-all resize-none shadow-sm"
                                     />
-                                    <p className="text-[12px] text-foreground/50 mt-2 px-1">Usada para geração via modelo gpt-4o.</p>
+                                    <p className="text-[12px] text-foreground/50 mt-2 px-1">
+                                        A IA será injetada com essa persona para todos os posts que você criar. Reflete seu cargo, senioridade e estilo pessoal.
+                                    </p>
                                 </div>
-                                <div className="h-px w-full bg-border/40" />
+                            </div>
+                            <Button 
+                                onClick={handleSaveKeys} 
+                                disabled={savingKeys || loadingKeys}
+                                className="w-full rounded-full bg-foreground text-background hover:bg-foreground/90 font-medium tracking-tight shadow-sm mt-4"
+                            >
+                                {savingKeys ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : 'Salvar Perfil'}
+                            </Button>
+                        </TabsContent>
+
+                        <TabsContent value="api-keys" className="m-0 space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                            <div className="space-y-4">
+
                                 <div>
                                     <label className="text-[13px] font-medium text-foreground/80 flex items-center gap-2 mb-2">
                                         Google Gemini API Key

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import OpenAI from 'openai'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { z } from 'zod'
 import { Ratelimit } from '@upstash/ratelimit'
@@ -9,14 +8,19 @@ import { Redis } from '@upstash/redis'
 // Zod Security Schema
 const generateSchema = z.object({
     topic: z.string().min(10, "Tópico deve ter no mínimo 10 caracteres").max(3000, "Tópico maliciosamente longo. Máximo 3000.").trim(),
-    provider: z.enum(['openai', 'gemini']),
+    provider: z.enum(['gemini']),
     postLength: z.enum(['short', 'medium', 'long']).default('medium'),
     postStyle: z.string().max(100).default('top_voice')
 })
 
 // Rate Limiter
 let ratelimit: Ratelimit | null = null;
-if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+if (
+    process.env.UPSTASH_REDIS_REST_URL && 
+    process.env.UPSTASH_REDIS_REST_URL.startsWith('https://') &&
+    process.env.UPSTASH_REDIS_REST_TOKEN &&
+    process.env.UPSTASH_REDIS_REST_TOKEN !== 'your_upstash_redis_rest_token'
+) {
     ratelimit = new Ratelimit({
         redis: Redis.fromEnv(),
         limiter: Ratelimit.slidingWindow(3, "1 m"), // 3 requests per minute per user
@@ -37,6 +41,8 @@ export async function POST(request: Request) {
         if (authError || !user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
+
+        const userContext = user.user_metadata?.user_context || '';
 
         // 2. Parse payload with Zod
         let body;
@@ -86,6 +92,18 @@ export async function POST(request: Request) {
             case 'contrarian':
                 styleInstruction = '🎯 ESTILO OBRIGATÓRIO (Debate Contrariano): Comece destruindo um "conselho de LinkedIN" genérico, mito corporativo ou utopia de mercado. Apresente uma visão realista e contra o fluxo comum do seu nicho, embasada com lógica impecável. O objetivo é explodir de engajamento forçando opiniões cruzadas nos comentários.';
                 break;
+            case 'curation':
+                styleInstruction = '🎯 ESTILO OBRIGATÓRIO (Curadoria de Conteúdo): Crie uma lista curada de recursos, ferramentas, livros ou ferramentas. Estruture em formato de lista (bullet points ou numeração). Entregue valor rápido e prático, justificando a escolha de cada item de forma concisa. O objetivo é o leitor salvar a publicação (bookmarkable content).';
+                break;
+            case 'opinion':
+                styleInstruction = '🎯 ESTILO OBRIGATÓRIO (Opinião Forte): Posicione-se de maneira clara e assertiva sobre uma tendência de mercado recente, notícia atual ou mudança na indústria. Não fique "em cima do muro". Demonstre conhecimento profundo e convide os leitores a debaterem o seu ponto de vista nos comentários.';
+                break;
+            case 'reflection':
+                styleInstruction = '🎯 ESTILO OBRIGATÓRIO (Reflexão e Carreira): Parta de uma observação sutil de campo, um pensamento filosófico sobre a rotina corporativa ou uma desconstrução mental. Conecte de forma elegante a soft skills ou saúde mental profissional. Crie um ar de proximidade calma, como um mestre Jedi passando uma lição aprendida "the hard way".';
+                break;
+            case 'tips':
+                styleInstruction = '🎯 ESTILO OBRIGATÓRIO (Dicas Rápidas / Hacks): Vá direto ao core do problema. Entregue sacadas acionáveis, truques de produtividade ou hacks valiosos da profissão. Formate para leitura incrivelmente "skimmable" (muito espaço vazio, emojis de seta, listas bullet curtas). O foco é promover "quick wins" pro leitor aplicar 5 segundos após ler.';
+                break;
             default:
                 styleInstruction = '🎯 ESTILO OBRIGATÓRIO: Mistura equilibrada de autoridade prática com história de vida.';
         }
@@ -94,7 +112,10 @@ export async function POST(request: Request) {
         const prompt = `# ROLE (PAPEL)
 Você é um Estrategista de Conteúdo para LinkedIn, especialista em Copywriting, Growth Hacking e Posicionamento de Executivos/Sêniors. Seu objetivo é ditar a escrita de modo a atrair *Headhunters* e garantir retenção máxima.
 
-# CONTEXT (CONTEXTO DO USUÁRIO)
+# CONTEXTO DE PERSONA (O AUTOR DO POST)
+${userContext ? `ATENÇÃO OBRIGATÓRIA: O autor destas postagens possui o seguinte background e estilo: "${userContext}".\nSua escrita DEVE obrigatoriamente soar como essa pessoa, assumindo sua senioridade e a profissão/contexto relatado.` : 'ATENÇÃO: Aja como um executivo ou especialista tentando estabelecer autoridade no seu nicho genérico.'}
+
+# CONTEXT (CONTEXTO DO EXATO POST DE HOJE)
 Vou fornecer um tema ou evento central. Sua prioridade exclusiva é transformar essa faísca em um manifesto inesquecível adotando o posicionamento que será exigido abaixo.
 
 # INPUTS
@@ -115,36 +136,19 @@ ${styleInstruction}
 # OUTPUT FORMAT (MANDATÓRIO)
 EMITA SOMENTE E PURAMENTE O TEXTO DO POST, PRONTO PARA SER COPIADO. Nada de aspas externas, respostas prévias ou metadados de assistência. Inclua no final do texto 3 a 5 hashtags muito técnicas da área abordada soltas em uma base linear.`;
 
-        if (provider === 'gemini') {
-            const userKey = user.user_metadata?.gemini_api_key;
-            const envKey = process.env.GEMINI_API_KEY;
-            const finalKey = (userKey && userKey.length > 5) ? userKey : envKey;
+        const userKey = user.user_metadata?.gemini_api_key;
+        const envKey = process.env.GEMINI_API_KEY;
+        const finalKey = (userKey && userKey.length > 5) ? userKey : envKey;
 
-            if (finalKey && finalKey !== 'your_gemini_api_key' && finalKey !== 'mock-key') {
-                const ai = new GoogleGenerativeAI(finalKey)
-                const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' })
+        if (finalKey && finalKey !== 'your_gemini_api_key' && finalKey !== 'mock-key') {
+            const ai = new GoogleGenerativeAI(finalKey)
+            const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
-                const result = await model.generateContent(prompt)
-                generatedContent = result.response.text() || ''
-            } else {
-                // Mock response for testing setup safely without exposing errors
-                generatedContent = `[MOCK GEMINI RESPONSE] Here is an engaging post about: ${topic.substring(0, 30)}...\n\n#AI #LinkedIn #Growth`
-            }
-        } else { // openai
-            const userKey = user.user_metadata?.openai_api_key;
-            const envKey = process.env.OPENAI_API_KEY;
-            const finalKey = (userKey && userKey.length > 5) ? userKey : envKey;
-
-            if (finalKey && finalKey !== 'your_openai_api_key' && finalKey !== 'mock-key') {
-                const openai = new OpenAI({ apiKey: finalKey })
-                const completion = await openai.chat.completions.create({
-                    model: "gpt-4o",
-                    messages: [{ role: "user", content: prompt }],
-                })
-                generatedContent = completion.choices[0].message.content || ''
-            } else {
-                generatedContent = `[MOCK OPENAI RESPONSE] Excited to share my thoughts on: ${topic.substring(0, 30)}...\n\n#OpenAI #LinkedIn #Innovation`
-            }
+            const result = await model.generateContent(prompt)
+            generatedContent = result.response.text() || ''
+        } else {
+            // Mock response for testing setup safely without exposing errors
+            generatedContent = `[MOCK GEMINI RESPONSE] Aqui está um post engajante sobre: ${topic.substring(0, 30)}...\n\n#GoogleGemini #LinkedIn #Growth`
         }
 
         // 4. Send to Telegram

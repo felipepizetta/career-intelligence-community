@@ -11,8 +11,9 @@ export async function GET() {
     }
 
     return NextResponse.json({
-        openai_api_key: user.user_metadata?.openai_api_key || '',
-        gemini_api_key: user.user_metadata?.gemini_api_key || ''
+
+        gemini_api_key: user.user_metadata?.gemini_api_key || '',
+        user_context: user.user_metadata?.user_context || ''
     })
 }
 
@@ -27,12 +28,13 @@ export async function POST(request: Request) {
 
     try {
         const body = await request.json()
-        const { openai_api_key, gemini_api_key } = body
+        const { gemini_api_key, user_context } = body
 
         const { data, error } = await supabase.auth.updateUser({
             data: {
-                openai_api_key: openai_api_key,
-                gemini_api_key: gemini_api_key
+
+                gemini_api_key: gemini_api_key,
+                user_context: user_context
             }
         })
 

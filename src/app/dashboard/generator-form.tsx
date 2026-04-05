@@ -32,22 +32,20 @@ const formSchema = z.object({
         .max(10000, { message: 'Context is too long. Please keep it under 10000 characters.' }),
     provider: z.enum(['openai', 'gemini']),
     postLength: z.enum(['short', 'medium', 'long']),
-    postStyle: z.enum(['top_voice', 'case_study', 'technical_tutorial', 'storytelling', 'contrarian']),
+    postStyle: z.enum(['top_voice', 'case_study', 'technical_tutorial', 'storytelling', 'contrarian', 'curation', 'opinion', 'reflection', 'tips']),
 })
 
 export function GeneratorForm({ 
     initialPostData, 
-    hasOpenAI = false, 
     hasGemini = false 
 }: { 
-    initialPostData?: { topic: string; provider: "openai" | "gemini"; content: string },
-    hasOpenAI?: boolean,
+    initialPostData?: { topic: string; provider: "gemini"; content: string },
     hasGemini?: boolean
 }) {
     const router = useRouter()
     const [isGenerating, setIsGenerating] = useState(false)
     const [lastGeneratedPost, setLastGeneratedPost] = useState(initialPostData?.content || '')
-    const hasAnyKey = hasOpenAI || hasGemini;
+    const hasAnyKey = hasGemini;
 
     // News Extractor States
     const [isLinkMode, setIsLinkMode] = useState(false)
@@ -62,7 +60,7 @@ export function GeneratorForm({
         resolver: zodResolver(formSchema),
         defaultValues: {
             topic: '',
-            provider: 'openai',
+            provider: 'gemini',
             postLength: 'medium',
             postStyle: 'top_voice',
         },
@@ -76,10 +74,10 @@ export function GeneratorForm({
         } else {
             setLastGeneratedPost('')
             form.setValue('topic', '', { shouldValidate: false })
-            const defaultProv = hasOpenAI ? 'openai' : (hasGemini ? 'gemini' : 'openai');
-            form.setValue('provider', defaultProv as any, { shouldValidate: false })
+            const defaultProv = 'gemini';
+            form.reset({ topic: '', provider: defaultProv as any })
         }
-    }, [initialPostData, form, hasOpenAI, hasGemini])
+    }, [initialPostData, form, hasGemini])
 
     async function onSubmit(values: z.infer<typeof formSchema>) {
         setIsGenerating(true)
@@ -358,25 +356,9 @@ export function GeneratorForm({
                                                             
                                                             {/* Model Selector or API Missing Warning */}
                                                             {hasAnyKey ? (
-                                                                <FormField
-                                                                    control={form.control}
-                                                                    name="provider"
-                                                                    render={({ field }) => (
-                                                                        <FormItem className="space-y-0">
-                                                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                                                                <FormControl>
-                                                                                    <SelectTrigger className="h-8 rounded-full bg-background/50 hover:bg-background border border-border/50 text-foreground/70 hover:text-foreground focus:ring-0 shadow-none text-[12px] font-medium px-4 transition-colors w-auto gap-2">
-                                                                                        <SelectValue placeholder="Model" />
-                                                                                    </SelectTrigger>
-                                                                                </FormControl>
-                                                                                <SelectContent className="bg-white border border-border/60 shadow-xl rounded-2xl min-w-[150px] p-1">
-                                                                                    {hasOpenAI && <SelectItem value="openai" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">OpenAI (GPT-4o)</SelectItem>}
-                                                                                    {hasGemini && <SelectItem value="gemini" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Google Gemini</SelectItem>}
-                                                                                </SelectContent>
-                                                                            </Select>
-                                                                        </FormItem>
-                                                                    )}
-                                                                />
+                                                                <div className="h-8 rounded-full bg-background/50 border border-border/50 text-foreground/70 text-[12px] font-medium px-4 flex items-center gap-2">
+                                                                    Google Gemini
+                                                                </div>
                                                             ) : (
                                                                 <SettingsModal 
                                                                     customTrigger={
@@ -386,6 +368,28 @@ export function GeneratorForm({
                                                                     }
                                                                 />
                                                             )}
+
+                                                            {/* Length Selector */}
+                                                            <FormField
+                                                                control={form.control}
+                                                                name="postLength"
+                                                                render={({ field }) => (
+                                                                    <FormItem className="space-y-0">
+                                                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                                            <FormControl>
+                                                                                <SelectTrigger className="h-8 rounded-full bg-background/50 hover:bg-background border border-border/50 text-foreground/70 hover:text-foreground focus:ring-0 shadow-none text-[12px] font-medium px-4 transition-colors w-auto gap-2 flex-shrink-0">
+                                                                                    <SelectValue placeholder="Tamanho do Post" />
+                                                                                </SelectTrigger>
+                                                                            </FormControl>
+                                                                            <SelectContent className="bg-white border border-border/60 shadow-xl rounded-2xl min-w-[150px] p-1 z-[999]">
+                                                                                <SelectItem value="short" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Curto (Rápido)</SelectItem>
+                                                                                <SelectItem value="medium" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Médio (Recomendado)</SelectItem>
+                                                                                <SelectItem value="long" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Longo (Aprofundado)</SelectItem>
+                                                                            </SelectContent>
+                                                                        </Select>
+                                                                    </FormItem>
+                                                                )}
+                                                            />
 
                                                             {/* Style Selector */}
                                                             <FormField
@@ -399,12 +403,16 @@ export function GeneratorForm({
                                                                                     <SelectValue placeholder="Estilo do Post" />
                                                                                 </SelectTrigger>
                                                                             </FormControl>
-                                                                            <SelectContent className="bg-white border border-border/60 shadow-xl rounded-2xl min-w-[200px] p-1 z-[999]">
+                                                                            <SelectContent className="bg-white border border-border/60 shadow-xl rounded-2xl min-w-[200px] max-h-[300px] p-1 z-[999]">
                                                                                 <SelectItem value="top_voice" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Top Voice 🌟</SelectItem>
                                                                                 <SelectItem value="case_study" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Case (Resultados) 📈</SelectItem>
                                                                                 <SelectItem value="technical_tutorial" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Tutorial Técnico 🛠️</SelectItem>
                                                                                 <SelectItem value="storytelling" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Storytelling 📖</SelectItem>
                                                                                 <SelectItem value="contrarian" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Contrarian (Polêmica) 🔥</SelectItem>
+                                                                                <SelectItem value="curation" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Curadoria/Listas 📋</SelectItem>
+                                                                                <SelectItem value="opinion" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Opinião Forte 🗣️</SelectItem>
+                                                                                <SelectItem value="reflection" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Reflexão/Citação 🤔</SelectItem>
+                                                                                <SelectItem value="tips" className="focus:bg-foreground/5 cursor-pointer rounded-xl font-medium text-[13px] py-2 px-3">Dicas Rápidas 💡</SelectItem>
                                                                             </SelectContent>
                                                                         </Select>
                                                                     </FormItem>

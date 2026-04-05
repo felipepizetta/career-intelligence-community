@@ -41,7 +41,7 @@ export default async function HistorySidebar() {
                     posts.map((post: any) => (
                         <div key={post.id} className="relative group flex items-start justify-between p-3 rounded-xl hover:bg-white shadow-[0_0_0_1px_transparent] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.05)] transition-all cursor-pointer">
                             <Link
-                                href={`?postId=${post.id}`}
+                                href={`/dashboard/generator?postId=${post.id}`}
                                 className="flex flex-col text-foreground flex-1 min-w-0"
                             >
                                 <div className="flex items-center justify-between w-full">
