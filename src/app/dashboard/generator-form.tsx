@@ -173,7 +173,7 @@ export function GeneratorForm({
             const data = await res.json()
             const richContext = data.content
 
-            const text = `Título da matéria: ${article.title}\n Texto da matéria: \n${richContext}`
+            const text = `Título da matéria: ${article.title}\n Link da matéria: ${article.url || ''}\n Texto da matéria: \n${richContext}`
 
             form.setValue('topic', text, { shouldValidate: true })
             toast.success('🎉 Imersão Profunda! O texto da matéria inteira foi injetado (Leia e depois Submit).')
@@ -357,7 +357,7 @@ export function GeneratorForm({
                                                             {/* Model Selector or API Missing Warning */}
                                                             {hasAnyKey ? (
                                                                 <div className="h-8 rounded-full bg-background/50 border border-border/50 text-foreground/70 text-[12px] font-medium px-4 flex items-center gap-2">
-                                                                    Google Gemini
+                                                                    Gemini
                                                                 </div>
                                                             ) : (
                                                                 <SettingsModal 

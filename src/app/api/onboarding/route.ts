@@ -88,9 +88,10 @@ ${cleanedResume.substring(0, 1500)}
                     generationConfig: { responseMimeType: "application/json" }
                 });
 
-                const prompt = `Você é um Analista de Carreira e Headhunter de elite. 
-Sua missão é responder EXATAMENTE e APENAS com um objeto JSON.
-Formato estrito:
+                const prompt = `Você é um Analista de Carreira, Headhunter de elite e Especialista em Criação de Currículos ATS-Friendly. 
+Sua missão é ler o LinkedIn Profile (em anexo textual no fim do prompt) e responder EXATAMENTE e APENAS com um objeto JSON válido, contendo as métricas de carreira E a reescrita técnica do currículo.
+
+Formato estrito (Retorne SOMENTE este JSON estruturado e nada fora dele):
 {
   "current_status": "Breve resumo (1 a 2 frases) de onde o profissional está no mercado hoje. Avalie o nível de senioridade real dele baseado no currículo, momento atual de carreira e o que ele já domina.",
   "top_skills": ["Skill1", "Skill2", "Skill3", "Skill4", "Skill5"],
@@ -98,20 +99,68 @@ Formato estrito:
      "Primeira ação tática e específica, partindo EXATAMENTE do momento atual dele (current_status) em direção ao Cargo Alvo (Ex: Assumir projeto de X ou Estudar Y).",
      "Segunda ação concreta e diferenciada para encurtar o caminho entre onde ele está e onde quer chegar.",
      "Terceira ação focada em posicionamento ou técnica."
-  ]
+  ],
+  "resume_structured": {
+    "personal": {
+      "name": "Nome Completo (Extraia do currículo)",
+      "title": "Cargo sugerido otimizado baseado nas experiências",
+      "email": "E-mail (se houver)",
+      "phone": "Telefone (se houver)",
+      "location": "Localidade (se houver)",
+      "linkedin": "URL (se houver)"
+    },
+    "summary": "Resumo de 3 a 4 linhas reescrito. Foco em hard skills, anos de experiência, resultados quantificáveis e liderança. O tom deve ser sênior e direto.",
+    "experience": [
+      {
+        "company": "Empresa",
+        "position": "Cargo",
+        "period": "Jan 2020 - Atual",
+        "description": [
+          "Liderou X resultando em Y...",
+          "Aumentou a receita em X%...",
+          "Gerenciou time de X pessoas..."
+        ]
+      }
+    ],
+    "education": [
+      {
+        "institution": "Universidade",
+        "degree": "Curso",
+        "period": "Ex: 2012 - 2016"
+      }
+    ],
+    "skills": ["Skill 1", "Skill 2"]
+  }
 }
 
 OBJETIVO DO USUÁRIO: ${goal}
 CARGO ALVO: ${targetRole}
 
-CURRÍCULO:
+CURRÍCULO (EXTRAÇÃO BRUTA):
 ${cleanedResume}`;
 
                 const result = await model.generateContent(prompt);
                 let content = result.response.text();
                 
                 content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-                analyticsJSON = JSON.parse(content);
+                const fullResponse = JSON.parse(content);
+                
+                // Segregar as métricas para a Auth JWT
+                if (fullResponse.top_skills && fullResponse.action_plan) {
+                    analyticsJSON = {
+                        current_status: fullResponse.current_status || 'Avaliando momento atual...',
+                        top_skills: fullResponse.top_skills,
+                        action_plan: fullResponse.action_plan
+                    };
+                }
+
+                // Inserir o currículo gerado silenciosamente na tabela de resumes
+                if (fullResponse.resume_structured) {
+                    await supabase.from('resumes').insert({
+                        user_id: user.id,
+                        content: fullResponse.resume_structured
+                    });
+                }
             } catch (err) {
                 console.error("[ONBOARDING] Failed to generate JSON Analytics via Gemini:", err);
             }

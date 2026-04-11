@@ -7,7 +7,7 @@ import { Redis } from '@upstash/redis'
 
 // Zod Security Schema
 const generateSchema = z.object({
-    topic: z.string().min(10, "Tópico deve ter no mínimo 10 caracteres").max(3000, "Tópico maliciosamente longo. Máximo 3000.").trim(),
+    topic: z.string().min(10, "Tópico deve ter no mínimo 10 caracteres").max(30000, "Tópico maliciosamente longo. Máximo 3000.").trim(),
     provider: z.enum(['gemini']),
     postLength: z.enum(['short', 'medium', 'long']).default('medium'),
     postStyle: z.string().max(100).default('top_voice')
@@ -131,7 +131,7 @@ ${styleInstruction}
 2. **Readability (Espaçamento):** Frases e parágrafos ultra-curtos. Linhas em branco respirando entre cada bloco forte de informação. Zero Markdown como asteriscos ou negrito para manter a fluidez limpa nativa do LinkedIn.
 3. **Imprimatur (Evite "Cara de IA"):** Evite palavras encorpadas clássicas de IA ("entusiasta", "empolgado", "na era digital", "fundamental", "crucial", "tapestry"). Escreva como um humano sênior conversando com outros humanos seniores num café expresso executivo.
 4. **Formatação Otimizada:** Use poucos emojis apenas para organizar ideias como viés ou "bullets".
-5. **CTA Irresistível:** A última linha é focada no algoritmo (comentários longos). Faça uma pergunta polarizadora, complexa ou baseada na experiência da audiência, fugindo de clichês (fuja de "o que você acha?").
+5. **CTA Irresistível:** A última linha é focada no algoritmo (comentários longos). Faça uma pergunta polarizadora, complexa ou baseada na experiência da audiência, fugindo de clichês (fuja de "o que você acha?"). ***IMPORTANTE: Se houver um "Link da matéria" (ou link de notícia) fornecido no Tema Central, você DEVE inserir EXATAMENTE a frase "Fonte: [url da noticia]" em uma linha separada IMEDIATAMENTE ANTES da sua pergunta final.***
 
 # OUTPUT FORMAT (MANDATÓRIO)
 EMITA SOMENTE E PURAMENTE O TEXTO DO POST, PRONTO PARA SER COPIADO. Nada de aspas externas, respostas prévias ou metadados de assistência. Inclua no final do texto 3 a 5 hashtags muito técnicas da área abordada soltas em uma base linear.`;

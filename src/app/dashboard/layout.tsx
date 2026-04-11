@@ -21,9 +21,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
     }
 
     return (
-        <div className="flex h-screen w-full flex-col bg-background text-foreground relative overflow-hidden">
+        <div className="flex h-screen w-full flex-col bg-background text-foreground relative overflow-hidden print:overflow-visible print:h-auto print:block">
             {/* Dashboard Nav - Soft & Elegant */}
-            <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-xl px-4 sm:px-6">
+            <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-xl px-4 sm:px-6 print:hidden">
                 <div className="flex items-center gap-6">
                     <Link href="/dashboard" className="flex items-center gap-2 group">
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-50 border border-orange-100 text-primary transition-all">
@@ -39,6 +39,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
                         </Link>
                         <Link href="/dashboard/generator" className="text-[14px] font-medium text-foreground/70 hover:text-foreground transition-colors hover:bg-foreground/5 px-3 py-1.5 rounded-full">
                             Criador de Posts
+                        </Link>
+                        <Link href="/dashboard/resume" className="text-[14px] font-medium text-foreground/70 hover:text-foreground transition-colors hover:bg-foreground/5 px-3 py-1.5 rounded-full">
+                            Currículo Inteligente
                         </Link>
                     </nav>
                 </div>

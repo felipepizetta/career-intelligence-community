@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Settings, Key, Bot, RefreshCw, Zap, Clock, LinkIcon, Calendar, User } from 'lucide-react'
+import { Settings, Key, Bot, RefreshCw, Zap, Clock, LinkIcon, Calendar, User, FileUp } from 'lucide-react'
 import {
     Dialog,
     DialogContent,
@@ -185,6 +185,46 @@ export function SettingsModal({ customTrigger }: { customTrigger?: React.ReactNo
                     <div className="p-6 bg-background/30 h-[480px] overflow-y-auto w-full no-scrollbar">
                         <TabsContent value="profile" className="m-0 space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
                             <div className="space-y-4">
+                                <div className="p-4 bg-orange-50/50 border border-orange-200/60 rounded-2xl flex flex-col items-center justify-center text-center space-y-3">
+                                    <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center">
+                                        <FileUp className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-[13px] font-semibold text-zinc-800">Atualizar Profile.pdf</h4>
+                                        <p className="text-[11px] text-zinc-500 mt-0.5">Envie um arquivo exportado recentemente do LinkedIn para atualizar seu Currículo Inteligente.</p>
+                                    </div>
+                                    <div className="relative mt-2">
+                                        <input 
+                                            type="file" 
+                                            accept="application/pdf"
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0];
+                                                if (!file) return;
+                                                if (file.type !== 'application/pdf') {
+                                                    toast.error('O arquivo precisa ser um PDF.');
+                                                    return;
+                                                }
+                                                const toastId = toast.loading('Analisando PDF (Isso pode levar de 10 a 20 segundos)...');
+                                                const formData = new FormData();
+                                                formData.append('pdf', file);
+                                                try {
+                                                    const res = await fetch('/api/resume', { method: 'POST', body: formData });
+                                                    if (res.ok) {
+                                                        toast.success('Currículo Inteligente atualizado!', { id: toastId });
+                                                        window.location.reload();
+                                                    } else {
+                                                        toast.error('Falha ao processar.', { id: toastId });
+                                                    }
+                                                } catch(err) {
+                                                    toast.error('Erro de conexão.', { id: toastId });
+                                                }
+                                            }}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        />
+                                        <Button size="sm" variant="outline" className="h-8 text-[12px] pointer-events-none">Selecionar PDF</Button>
+                                    </div>
+                                </div>
+                                
                                 <div>
                                     <label className="text-[13px] font-medium text-foreground/80 flex items-center gap-2 mb-2">
                                         Contexto Profissional (Tom de Voz)
@@ -214,7 +254,7 @@ export function SettingsModal({ customTrigger }: { customTrigger?: React.ReactNo
 
                                 <div>
                                     <label className="text-[13px] font-medium text-foreground/80 flex items-center gap-2 mb-2">
-                                        Google Gemini API Key
+                                        Gemini API Key
                                     </label>
                                     <input
                                         type="password"
